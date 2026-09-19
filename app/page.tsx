@@ -39,15 +39,9 @@ type AuditLogEntry = {
 };
 
 // --- Seed Data ---
-const SEED_ITEMS: Item[] = [
-  { id: "1", code: "01", name: "01 - ජංගම විදුලි බුබුළු", reorderLevel: 10, defaultUnitPrice: 205.60 },
-  { id: "2", code: "02", name: "02 - මුදල් සහතික", reorderLevel: 20, defaultUnitPrice: 105.50 },
-];
+const SEED_ITEMS: Item[] = [];
 
-const SEED_TRANSACTIONS: Transaction[] = [
-  { id: "t1", itemId: "1", date: new Date().toISOString().split("T")[0], type: "IN", quantity: 50, unitPrice: 205.60, description: "Opening Balance", authorizedBy: "System", createdAt: Date.now() - 10000 },
-  { id: "t2", itemId: "2", date: new Date().toISOString().split("T")[0], type: "IN", quantity: 69, unitPrice: 105.50, description: "Opening Balance", authorizedBy: "System", createdAt: Date.now() },
-];
+const SEED_TRANSACTIONS: Transaction[] = [];
 
 export default function InventoryLedger() {
   const [isMounted, setIsMounted] = useState(false);
