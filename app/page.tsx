@@ -327,7 +327,7 @@ export default function InventoryLedger() {
               <BarChart3 className="text-white" size={28} strokeWidth={2.5}/>
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Enterprise Ledger</h1>
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Ledger</h1>
               <p className="text-slate-500 font-medium text-sm mt-0.5">Double-Entry Stock Register • Fully Offline</p>
             </div>
           </div>
@@ -762,57 +762,56 @@ export default function InventoryLedger() {
     </div>
 
     {/* --- Print-Only Comprehensive Report --- */}
-    <div className="hidden print:block w-full bg-white text-black p-8 font-sans">
-      <div className="text-center mb-8 border-b-2 border-black pb-6">
-        <h1 className="text-3xl font-black uppercase tracking-widest text-black">Comprehensive Inventory Ledger</h1>
-        <p className="text-lg mt-2 font-bold text-gray-700">Double-Entry Stock Register Report</p>
-        <p className="text-sm mt-1 text-gray-600">Generated on: {new Date().toLocaleString()}</p>
-        <p className="text-sm font-bold mt-2 text-indigo-700">Filter Applied: {filterType.replace(/_/g, " ")} {filterType === "AS_OF_DATE" ? `(${asOfDate})` : ""}</p>
+    <div className="hidden print:block w-full bg-white text-black p-2 font-sans">
+      <div className="text-center mb-4 border-b border-black pb-2">
+        <h1 className="text-xl font-black uppercase tracking-widest text-black">Ledger</h1>
+        <p className="text-sm mt-1 font-bold text-gray-700">Double-Entry Stock Register Report</p>
+        <p className="text-xs mt-1 text-gray-600">Generated on: {new Date().toLocaleString()} | Filter Applied: {filterType.replace(/_/g, " ")} {filterType === "AS_OF_DATE" ? `(${asOfDate})` : ""}</p>
       </div>
 
       {allLedgers.map(({ item, rows }) => (
-        <div key={item.id} className="mb-12 break-inside-avoid">
-          <div className="flex justify-between items-end mb-4 border-b border-gray-400 pb-2">
+        <div key={item.id} className="mb-6 break-inside-avoid">
+          <div className="flex justify-between items-end mb-2 border-b border-gray-400 pb-1">
             <div>
-              <h2 className="text-xl font-bold text-black">{item.code} - {item.name}</h2>
-              <p className="text-sm text-gray-700 mt-1">Reorder Level: {item.reorderLevel} | Default Price: {formatCurrency(item.defaultUnitPrice)}</p>
+              <h2 className="text-sm font-bold text-black">{item.code} - {item.name}</h2>
+              <p className="text-xs text-gray-700">Reorder Level: {item.reorderLevel} | Default Price: {formatCurrency(item.defaultUnitPrice)}</p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-bold text-gray-600 uppercase">Final Balance</p>
-              <p className="text-2xl font-black text-black">{rows.length > 0 ? rows[rows.length-1].balance : 0} Units</p>
+              <p className="text-[10px] font-bold text-gray-600 uppercase">Final Balance</p>
+              <p className="text-sm font-black text-black">{rows.length > 0 ? rows[rows.length-1].balance : 0} Units</p>
             </div>
           </div>
 
-          <table className="w-full text-left text-sm border-collapse border border-gray-400">
+          <table className="w-full text-left text-xs border-collapse border border-gray-400">
             <thead>
               <tr className="bg-gray-200 text-black">
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs">Date</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs">Description / Ref</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs text-center">IN</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs text-center">OUT</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs text-right">Unit Price</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-black uppercase text-xs text-center">Balance</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs text-right">Value</th>
-                <th className="py-2.5 px-3 border border-gray-400 font-bold uppercase text-xs">Auth</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px]">Date</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px]">Description / Ref</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px] text-center">IN</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px] text-center">OUT</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px] text-right">Unit Price</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-black uppercase text-[10px] text-center">Balance</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px] text-right">Value</th>
+                <th className="py-1 px-1.5 border border-gray-400 font-bold uppercase text-[10px]">Auth</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={8} className="py-6 text-center text-gray-500 font-medium border border-gray-400">No records found for this period.</td></tr>
+                <tr><td colSpan={8} className="py-2 text-center text-gray-500 font-medium border border-gray-400 text-[10px]">No records found for this period.</td></tr>
               ) : (
                 rows.map(row => (
                   <tr key={row.id}>
-                    <td className="py-2 px-3 border border-gray-400 text-gray-800">{row.date}</td>
-                    <td className="py-2 px-3 border border-gray-400">
+                    <td className="py-1 px-1.5 border border-gray-400 text-gray-800">{row.date}</td>
+                    <td className="py-1 px-1.5 border border-gray-400">
                       <div className="font-bold text-black">{row.description}</div>
-                      {row.referenceNo && <div className="text-xs text-gray-600 mt-0.5">Ref: {row.referenceNo}</div>}
+                      {row.referenceNo && <div className="text-[10px] text-gray-600">Ref: {row.referenceNo}</div>}
                     </td>
-                    <td className="py-2 px-3 border border-gray-400 text-center font-bold text-gray-800">{row.type === "IN" ? `+${row.quantity}` : ""}</td>
-                    <td className="py-2 px-3 border border-gray-400 text-center font-bold text-gray-800">{row.type === "OUT" ? `-${row.quantity}` : ""}</td>
-                    <td className="py-2 px-3 border border-gray-400 text-right font-mono text-gray-700">{formatCurrency(row.unitPrice)}</td>
-                    <td className="py-2 px-3 border border-gray-400 text-center font-black text-black bg-gray-50">{row.balance}</td>
-                    <td className="py-2 px-3 border border-gray-400 text-right font-mono font-bold text-black">{formatCurrency(row.valuation)}</td>
-                    <td className="py-2 px-3 border border-gray-400 text-gray-800">{row.authorizedBy}</td>
+                    <td className="py-1 px-1.5 border border-gray-400 text-center font-bold text-gray-800">{row.type === "IN" ? `+${row.quantity}` : ""}</td>
+                    <td className="py-1 px-1.5 border border-gray-400 text-center font-bold text-gray-800">{row.type === "OUT" ? `-${row.quantity}` : ""}</td>
+                    <td className="py-1 px-1.5 border border-gray-400 text-right font-mono text-gray-700">{formatCurrency(row.unitPrice)}</td>
+                    <td className="py-1 px-1.5 border border-gray-400 text-center font-black text-black bg-gray-50">{row.balance}</td>
+                    <td className="py-1 px-1.5 border border-gray-400 text-right font-mono font-bold text-black">{formatCurrency(row.valuation)}</td>
+                    <td className="py-1 px-1.5 border border-gray-400 text-gray-800">{row.authorizedBy}</td>
                   </tr>
                 ))
               )}
