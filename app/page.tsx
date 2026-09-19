@@ -81,16 +81,23 @@ export default function InventoryLedger() {
     if (!savedItems || !savedTxs) {
       setItems(SEED_ITEMS);
       setTransactions(SEED_TRANSACTIONS);
-      setSelectedItemId(SEED_ITEMS[0].id);
-      localStorage.setItem("inventory_items", JSON.stringify(SEED_ITEMS));
-      localStorage.setItem("inventory_transactions", JSON.stringify(SEED_TRANSACTIONS));
+      if (SEED_ITEMS.length > 0) {
+        setSelectedItemId(SEED_ITEMS[0].id);
+      }
     } else {
-      const parsedItems = JSON.parse(savedItems);
-      setItems(parsedItems);
-      setTransactions(JSON.parse(savedTxs));
-      if (savedLogs) setAuditLogs(JSON.parse(savedLogs));
-      if (parsedItems.length > 0) {
-        setSelectedItemId(parsedItems[0].id);
+      try {
+        const parsedItems = JSON.parse(savedItems);
+        setItems(parsedItems);
+        setTransactions(JSON.parse(savedTxs));
+        if (savedLogs) setAuditLogs(JSON.parse(savedLogs));
+        if (parsedItems.length > 0) {
+          setSelectedItemId(parsedItems[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to parse local storage data, resetting to empty.", err);
+        setItems([]);
+        setTransactions([]);
+        setAuditLogs([]);
       }
     }
   }, []);
@@ -203,14 +210,14 @@ export default function InventoryLedger() {
     e.preventDefault();
     if (!newItem.code || !newItem.name) return;
     const item: Item = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       code: newItem.code,
       name: newItem.name,
       reorderLevel: Number(newItem.reorderLevel),
       defaultUnitPrice: Number(newItem.defaultUnitPrice) || 0,
     };
     setItems([...items, item]);
-    setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "CREATE_ITEM", details: `Created Item: ${item.code} - ${item.name}` }]);
+    setAuditLogs([...auditLogs, { id: crypto.randomUUID(), timestamp: Date.now(), action: "CREATE_ITEM", details: `Created Item: ${item.code} - ${item.name}` }]);
     setSelectedItemId(item.id);
     setIsAddItemModalOpen(false);
     setNewItem({ code: "", name: "", reorderLevel: 10, defaultUnitPrice: 0 });
@@ -233,7 +240,7 @@ export default function InventoryLedger() {
     }
 
     const tx: Transaction = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       itemId: targetItemId,
       date: newTx.date!,
       type: newTx.type as "IN" | "OUT",
@@ -247,7 +254,7 @@ export default function InventoryLedger() {
     
     setTransactions([...transactions, tx]);
     const targetItemName = items.find(i => i.id === targetItemId)?.name || targetItemId;
-    setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "CREATE_TX", details: `Added ${tx.type} (${tx.quantity} units) for ${targetItemName}` }]);
+    setAuditLogs([...auditLogs, { id: crypto.randomUUID(), timestamp: Date.now(), action: "CREATE_TX", details: `Added ${tx.type} (${tx.quantity} units) for ${targetItemName}` }]);
     
     // Automatically switch to the item tab that was just modified
     if (selectedItemId !== targetItemId) {
@@ -281,7 +288,7 @@ export default function InventoryLedger() {
       const targetItemName = items.find(i => i.id === txToDelete?.itemId)?.name || "Unknown Item";
       setTransactions(transactions.filter(t => t.id !== id));
       if (txToDelete) {
-        setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "DELETE_TX", details: `Deleted ${txToDelete.type} record (${txToDelete.quantity} units) for ${targetItemName}` }]);
+        setAuditLogs([...auditLogs, { id: crypto.randomUUID(), timestamp: Date.now(), action: "DELETE_TX", details: `Deleted ${txToDelete.type} record (${txToDelete.quantity} units) for ${targetItemName}` }]);
       }
     }
   };
@@ -292,7 +299,7 @@ export default function InventoryLedger() {
       setItems(items.filter(i => i.id !== id));
       setTransactions(transactions.filter(t => t.itemId !== id));
       if (itemToDelete) {
-        setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "DELETE_ITEM", details: `Deleted Item: ${itemToDelete.code} - ${itemToDelete.name}` }]);
+        setAuditLogs([...auditLogs, { id: crypto.randomUUID(), timestamp: Date.now(), action: "DELETE_ITEM", details: `Deleted Item: ${itemToDelete.code} - ${itemToDelete.name}` }]);
       }
       if (selectedItemId === id) {
         setSelectedItemId("ALL_LOG");
@@ -303,7 +310,7 @@ export default function InventoryLedger() {
   const formatCurrency = (val: number) => `Rs. ${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const exportJSON = () => {
-    const data = JSON.stringify({ items, transactions }, null, 2);
+    const data = JSON.stringify({ items, transactions, auditLogs }, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -322,6 +329,7 @@ export default function InventoryLedger() {
         if (data.items && data.transactions) {
           setItems(data.items);
           setTransactions(data.transactions);
+          if (data.auditLogs) setAuditLogs(data.auditLogs);
           alert("Backup restored successfully!");
         }
       } catch (err) {
