@@ -5,7 +5,7 @@ import {
   Package, TrendingUp, AlertTriangle, 
   PlusCircle, FileDown, FileUp, Printer, 
   Trash2, X, Check, Search, Calendar,
-  BarChart3, Settings, ChevronRight
+  BarChart3, Settings, ChevronRight, ShieldCheck, Clock
 } from "lucide-react";
 
 // --- Types ---
@@ -30,6 +30,14 @@ type Transaction = {
   createdAt: number;
 };
 
+type AuditAction = "CREATE_ITEM" | "DELETE_ITEM" | "CREATE_TX" | "DELETE_TX";
+type AuditLogEntry = {
+  id: string;
+  timestamp: number;
+  action: AuditAction;
+  details: string;
+};
+
 // --- Seed Data ---
 const SEED_ITEMS: Item[] = [
   { id: "1", code: "01", name: "01 - ජංගම විදුලි බුබුළු", reorderLevel: 10, defaultUnitPrice: 205.60 },
@@ -45,6 +53,7 @@ export default function InventoryLedger() {
   const [isMounted, setIsMounted] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   // Filters
@@ -73,6 +82,7 @@ export default function InventoryLedger() {
     setIsMounted(true);
     const savedItems = localStorage.getItem("inventory_items");
     const savedTxs = localStorage.getItem("inventory_transactions");
+    const savedLogs = localStorage.getItem("inventory_audit_logs");
 
     if (!savedItems || !savedTxs) {
       setItems(SEED_ITEMS);
@@ -84,6 +94,7 @@ export default function InventoryLedger() {
       const parsedItems = JSON.parse(savedItems);
       setItems(parsedItems);
       setTransactions(JSON.parse(savedTxs));
+      if (savedLogs) setAuditLogs(JSON.parse(savedLogs));
       if (parsedItems.length > 0) {
         setSelectedItemId(parsedItems[0].id);
       }
@@ -95,8 +106,9 @@ export default function InventoryLedger() {
     if (isMounted) {
       localStorage.setItem("inventory_items", JSON.stringify(items));
       localStorage.setItem("inventory_transactions", JSON.stringify(transactions));
+      localStorage.setItem("inventory_audit_logs", JSON.stringify(auditLogs));
     }
-  }, [items, transactions, isMounted]);
+  }, [items, transactions, auditLogs, isMounted]);
 
   // Derived calculations for metrics
   const { totalInventoryValue, activeItemsCount, lowStockItems } = useMemo(() => {
@@ -204,6 +216,7 @@ export default function InventoryLedger() {
       defaultUnitPrice: Number(newItem.defaultUnitPrice) || 0,
     };
     setItems([...items, item]);
+    setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "CREATE_ITEM", details: `Created Item: ${item.code} - ${item.name}` }]);
     setSelectedItemId(item.id);
     setIsAddItemModalOpen(false);
     setNewItem({ code: "", name: "", reorderLevel: 10, defaultUnitPrice: 0 });
@@ -239,6 +252,8 @@ export default function InventoryLedger() {
     };
     
     setTransactions([...transactions, tx]);
+    const targetItemName = items.find(i => i.id === targetItemId)?.name || targetItemId;
+    setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "CREATE_TX", details: `Added ${tx.type} (${tx.quantity} units) for ${targetItemName}` }]);
     
     // Automatically switch to the item tab that was just modified
     if (selectedItemId !== targetItemId) {
@@ -268,7 +283,26 @@ export default function InventoryLedger() {
 
   const deleteTx = (id: string) => {
     if (confirm("Are you sure you want to delete this record? This may affect running balances.")) {
+      const txToDelete = transactions.find(t => t.id === id);
+      const targetItemName = items.find(i => i.id === txToDelete?.itemId)?.name || "Unknown Item";
       setTransactions(transactions.filter(t => t.id !== id));
+      if (txToDelete) {
+        setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "DELETE_TX", details: `Deleted ${txToDelete.type} record (${txToDelete.quantity} units) for ${targetItemName}` }]);
+      }
+    }
+  };
+
+  const deleteItem = (id: string) => {
+    if (confirm("WARNING: Are you sure you want to completely delete this item? This will also delete ALL transaction history for this item. This action cannot be undone.")) {
+      const itemToDelete = items.find(i => i.id === id);
+      setItems(items.filter(i => i.id !== id));
+      setTransactions(transactions.filter(t => t.itemId !== id));
+      if (itemToDelete) {
+        setAuditLogs([...auditLogs, { id: Date.now().toString(), timestamp: Date.now(), action: "DELETE_ITEM", details: `Deleted Item: ${itemToDelete.code} - ${itemToDelete.name}` }]);
+      }
+      if (selectedItemId === id) {
+        setSelectedItemId("ALL_LOG");
+      }
     }
   };
 
@@ -432,6 +466,14 @@ export default function InventoryLedger() {
             Global Activity Log
           </button>
 
+          <button
+            onClick={() => setSelectedItemId("AUDIT_TRAIL")}
+            className={`snap-center flex-shrink-0 flex items-center gap-3 px-6 py-3.5 rounded-2xl font-bold transition-all duration-300 ${selectedItemId === "AUDIT_TRAIL" ? "bg-rose-900 text-white shadow-xl shadow-rose-900/10 translate-y-[-2px]" : "bg-white text-slate-600 hover:bg-rose-50 border border-slate-200/60 shadow-sm"}`}
+          >
+            <div className={`w-2 h-2 rounded-full ${selectedItemId === "AUDIT_TRAIL" ? 'bg-rose-400' : 'bg-slate-300'}`}></div>
+            Security Audit Log
+          </button>
+
           {items.map(item => {
             const isSelected = selectedItemId === item.id;
             return (
@@ -519,6 +561,61 @@ export default function InventoryLedger() {
               </table>
             </div>
           </div>
+        ) : selectedItemId === "AUDIT_TRAIL" ? (
+          <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
+             <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-gradient-to-r from-slate-50 to-white">
+                <div className="flex items-center gap-5">
+                  <div className="bg-rose-50 p-4 rounded-2xl text-rose-600 hidden sm:block">
+                    <ShieldCheck size={32} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">Security Audit Log</h2>
+                    <p className="text-sm font-semibold text-slate-500 mt-1">Immutable record of all creations and deletions.</p>
+                  </div>
+                </div>
+             </div>
+             
+             <div className="overflow-x-auto pb-4">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-500">
+                    <th className="py-5 px-6 font-bold uppercase tracking-wider text-xs">Timestamp</th>
+                    <th className="py-5 px-6 font-bold uppercase tracking-wider text-xs">Action Type</th>
+                    <th className="py-5 px-6 font-bold uppercase tracking-wider text-xs w-full">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100/80">
+                  {auditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="py-24 text-center">
+                        <div className="flex flex-col items-center justify-center text-slate-400">
+                          <Clock size={48} className="mb-4 text-slate-300 opacity-50" />
+                          <p className="text-lg font-semibold">No audit logs found</p>
+                          <p className="text-sm mt-1">Actions like deleting items will appear here.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    [...auditLogs].reverse().map((log) => (
+                      <tr key={log.id} className="hover:bg-rose-50/30 transition-colors">
+                        <td className="py-4 px-6 text-slate-600 font-semibold">{new Date(log.timestamp).toLocaleString()}</td>
+                        <td className="py-4 px-6">
+                          <span className={`inline-flex items-center justify-center min-w-[6rem] px-3 py-1.5 rounded-lg text-xs font-black shadow-sm ${
+                            log.action.includes('DELETE') ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            {log.action.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <div className="font-bold text-slate-800">{log.details}</div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : selectedItem ? (
           <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
             {/* Header of Ledger */}
@@ -539,10 +636,15 @@ export default function InventoryLedger() {
                   </div>
                 </div>
               </div>
-              <div className="text-right bg-white px-6 py-4 rounded-2xl border border-slate-100 shadow-sm min-w-[200px]">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Current Valuation</div>
-                <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500 mt-1">
-                  {ledgerRows.length > 0 ? formatCurrency(ledgerRows[ledgerRows.length-1].valuation) : "Rs. 0.00"}
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <button onClick={() => deleteItem(selectedItem.id)} className="p-4 sm:p-3 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl border border-slate-100 hover:border-rose-100 transition-all group shadow-sm bg-white" title="Delete entire item">
+                  <Trash2 size={24} className="group-hover:scale-110 transition-transform" />
+                </button>
+                <div className="text-right bg-white px-6 py-4 rounded-2xl border border-slate-100 shadow-sm min-w-[200px]">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Current Valuation</div>
+                  <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500 mt-1">
+                    {ledgerRows.length > 0 ? formatCurrency(ledgerRows[ledgerRows.length-1].valuation) : "Rs. 0.00"}
+                  </div>
                 </div>
               </div>
             </div>
