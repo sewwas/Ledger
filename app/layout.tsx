@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ledger",
-  description: "Double-Entry Stock Register",
+  title: "සමෘද්ධි ප්රජාමූල බැංකු සමිතිය",
+  description: "ප්රාදේශීය ලේකම් කාර්යාලය - නියාගම",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

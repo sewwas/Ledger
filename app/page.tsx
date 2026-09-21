@@ -112,10 +112,11 @@ export default function InventoryLedger() {
   }, [items, transactions, auditLogs, isMounted]);
 
   // Derived calculations for metrics
-  const { totalInventoryValue, activeItemsCount, lowStockItems } = useMemo(() => {
+  const { totalInventoryValue, totalValueBreakdown, activeItemsCount, lowStockItems } = useMemo(() => {
     let totalValue = 0;
     let activeItemsCount = 0;
     const lowStockItems: Item[] = [];
+    const breakdown: { name: string; value: number }[] = [];
 
     items.forEach((item) => {
       const itemTxs = transactions
@@ -123,15 +124,31 @@ export default function InventoryLedger() {
         .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
 
       let balance = 0;
-      let lastPrice = item.defaultUnitPrice;
+      let currentBatches: { qty: number; price: number }[] = [];
+      
       itemTxs.forEach((t) => {
         balance += t.type === "IN" ? t.quantity : -t.quantity;
-        lastPrice = t.unitPrice; // Valuation based on the latest unit price
+        if (t.type === "IN") {
+          currentBatches.push({ qty: t.quantity, price: t.unitPrice });
+        } else if (t.type === "OUT") {
+          let remainingOut = t.quantity;
+          while (remainingOut > 0 && currentBatches.length > 0) {
+            if (currentBatches[0].qty <= remainingOut) {
+              remainingOut -= currentBatches[0].qty;
+              currentBatches.shift();
+            } else {
+              currentBatches[0].qty -= remainingOut;
+              remainingOut = 0;
+            }
+          }
+        }
       });
 
       if (balance > 0) {
-        totalValue += balance * lastPrice;
+        const itemValuation = currentBatches.reduce((acc, b) => acc + b.qty * b.price, 0);
+        totalValue += itemValuation;
         activeItemsCount++;
+        breakdown.push({ name: item.name, value: itemValuation });
       }
       
       if (balance <= item.reorderLevel) {
@@ -139,7 +156,7 @@ export default function InventoryLedger() {
       }
     });
 
-    return { totalInventoryValue: totalValue, activeItemsCount, lowStockItems };
+    return { totalInventoryValue: totalValue, totalValueBreakdown: breakdown, activeItemsCount, lowStockItems };
   }, [items, transactions, filterType, asOfDate]);
 
   // Compute all ledgers (used for Print all and UI)
@@ -157,9 +174,27 @@ export default function InventoryLedger() {
         .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
 
       let balance = 0;
+      let currentBatches: { qty: number; price: number }[] = [];
       const enriched = allTxs.map((t) => {
         balance += t.type === "IN" ? t.quantity : -t.quantity;
-        return { ...t, balance, valuation: balance * t.unitPrice };
+        
+        if (t.type === "IN") {
+          currentBatches.push({ qty: t.quantity, price: t.unitPrice });
+        } else if (t.type === "OUT") {
+          let remainingOut = t.quantity;
+          while (remainingOut > 0 && currentBatches.length > 0) {
+            if (currentBatches[0].qty <= remainingOut) {
+              remainingOut -= currentBatches[0].qty;
+              currentBatches.shift();
+            } else {
+              currentBatches[0].qty -= remainingOut;
+              remainingOut = 0;
+            }
+          }
+        }
+        
+        const valuation = currentBatches.reduce((acc, b) => acc + b.qty * b.price, 0);
+        return { ...t, balance, valuation, batches: JSON.parse(JSON.stringify(currentBatches)) };
       });
 
       const filtered = enriched.filter((t) => {
@@ -238,6 +273,48 @@ export default function InventoryLedger() {
         return;
       }
     }
+    
+    let outUnitPrice = Number(newTx.unitPrice);
+
+    if (newTx.type === "OUT") {
+      const itemTxs = transactions
+        .filter((t) => t.itemId === targetItemId)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+      
+      let currentBatches: { qty: number; price: number }[] = [];
+      itemTxs.forEach((t) => {
+        if (t.type === "IN") {
+          currentBatches.push({ qty: t.quantity, price: t.unitPrice });
+        } else if (t.type === "OUT") {
+          let remainingOut = t.quantity;
+          while (remainingOut > 0 && currentBatches.length > 0) {
+            if (currentBatches[0].qty <= remainingOut) {
+              remainingOut -= currentBatches[0].qty;
+              currentBatches.shift();
+            } else {
+              currentBatches[0].qty -= remainingOut;
+              remainingOut = 0;
+            }
+          }
+        }
+      });
+      
+      let outQty = Number(newTx.quantity);
+      let remainingOut = outQty;
+      let totalOutValue = 0;
+      while (remainingOut > 0 && currentBatches.length > 0) {
+        if (currentBatches[0].qty <= remainingOut) {
+          totalOutValue += currentBatches[0].qty * currentBatches[0].price;
+          remainingOut -= currentBatches[0].qty;
+          currentBatches.shift();
+        } else {
+          totalOutValue += remainingOut * currentBatches[0].price;
+          currentBatches[0].qty -= remainingOut;
+          remainingOut = 0;
+        }
+      }
+      outUnitPrice = outQty > 0 ? (totalOutValue / outQty) : 0;
+    }
 
     const tx: Transaction = {
       id: crypto.randomUUID(),
@@ -245,7 +322,7 @@ export default function InventoryLedger() {
       date: newTx.date!,
       type: newTx.type as "IN" | "OUT",
       quantity: Number(newTx.quantity),
-      unitPrice: Number(newTx.unitPrice),
+      unitPrice: outUnitPrice,
       description: newTx.description || "",
       referenceNo: newTx.referenceNo,
       authorizedBy: newTx.authorizedBy || "",
@@ -349,6 +426,52 @@ export default function InventoryLedger() {
     return newTx.type === "IN" ? currentStock + q : currentStock - q;
   }, [transactions, selectedItemId, newTx.itemId, newTx.type, newTx.quantity]);
 
+  const previewOutBatches = useMemo(() => {
+    const targetItemId = newTx.itemId || selectedItemId;
+    if (newTx.type !== "OUT" || !targetItemId) return null;
+    
+    const itemTxs = transactions
+      .filter((t) => t.itemId === targetItemId)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+      
+    let currentBatches: { qty: number; price: number }[] = [];
+    itemTxs.forEach((t) => {
+      if (t.type === "IN") {
+        currentBatches.push({ qty: t.quantity, price: t.unitPrice });
+      } else if (t.type === "OUT") {
+        let remainingOut = t.quantity;
+        while (remainingOut > 0 && currentBatches.length > 0) {
+          if (currentBatches[0].qty <= remainingOut) {
+            remainingOut -= currentBatches[0].qty;
+            currentBatches.shift();
+          } else {
+            currentBatches[0].qty -= remainingOut;
+            remainingOut = 0;
+          }
+        }
+      }
+    });
+
+    let outQty = Number(newTx.quantity) || 0;
+    let remainingOut = outQty;
+    const consumed: { qty: number; price: number }[] = [];
+    
+    while (remainingOut > 0 && currentBatches.length > 0) {
+      if (currentBatches[0].qty <= remainingOut) {
+        consumed.push({ qty: currentBatches[0].qty, price: currentBatches[0].price });
+        remainingOut -= currentBatches[0].qty;
+        currentBatches.shift();
+      } else {
+        consumed.push({ qty: remainingOut, price: currentBatches[0].price });
+        remainingOut = 0;
+      }
+    }
+    
+    const totalOutValue = consumed.reduce((acc, b) => acc + b.qty * b.price, 0);
+    
+    return { consumed, totalOutValue, missingQty: remainingOut };
+  }, [transactions, selectedItemId, newTx.itemId, newTx.type, newTx.quantity]);
+
   if (!isMounted) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">Loading Workspace...</div>;
 
   return (
@@ -363,20 +486,37 @@ export default function InventoryLedger() {
               <BarChart3 className="text-white" size={28} strokeWidth={2.5}/>
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Ledger</h1>
-              <p className="text-slate-500 font-medium text-sm mt-0.5">Double-Entry Stock Register • Fully Offline</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">සමෘද්ධි ප්‍රජාමූල බැංකු සමිතිය</h1>
+              <p className="text-slate-500 font-medium text-sm mt-0.5">ප්‍රාදේශීය ලේකම් කාර්යාලය - නියාගම</p>
             </div>
           </div>
           
           <div className="flex flex-wrap gap-4">
-            <div className="bg-white px-5 py-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 min-w-[240px] hover:shadow-md transition-shadow">
-              <div className="bg-emerald-100 p-2.5 rounded-full">
-                <TrendingUp className="text-emerald-600" size={20}/>
+            <div className="bg-white px-5 py-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-center min-w-[240px] hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-4">
+                <div className="bg-emerald-100 p-2.5 rounded-full">
+                  <TrendingUp className="text-emerald-600" size={20}/>
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Value</div>
+                  <div className="text-2xl font-black text-slate-800 mt-0.5">{formatCurrency(totalInventoryValue)}</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Value</div>
-                <div className="text-2xl font-black text-slate-800 mt-0.5">{formatCurrency(totalInventoryValue)}</div>
-              </div>
+              
+              {/* Inline Breakdown for Global Total */}
+              {totalValueBreakdown.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Item Breakdown</div>
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto pr-2">
+                    {totalValueBreakdown.map((b, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs gap-4">
+                        <span className="font-semibold text-slate-600 truncate" title={b.name}>{b.name}</span>
+                        <span className="font-bold text-slate-800 shrink-0">{formatCurrency(b.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="bg-white px-5 py-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 min-w-[180px] hover:shadow-md transition-shadow">
               <div className="bg-blue-100 p-2.5 rounded-full">
@@ -647,6 +787,20 @@ export default function InventoryLedger() {
                   <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500 mt-1">
                     {ledgerRows.length > 0 ? formatCurrency(ledgerRows[ledgerRows.length-1].valuation) : "Rs. 0.00"}
                   </div>
+                  
+                  {ledgerRows.length > 0 && ledgerRows[ledgerRows.length-1].batches?.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 text-left">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Stock Breakdown</div>
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-2">
+                        {ledgerRows[ledgerRows.length-1].batches.map((b: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-slate-600">{b.qty} <span className="text-slate-400 mx-1">×</span> {formatCurrency(b.price)}</span>
+                            <span className="font-bold text-slate-800">{formatCurrency(b.qty * b.price)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -736,16 +890,16 @@ export default function InventoryLedger() {
       
       {/* Add Item Modal */}
       {isAddItemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-300 border border-white/20">
-            <div className="px-8 py-6 flex justify-between items-center bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-md">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-300 border border-white/20">
+            <div className="px-6 sm:px-8 py-5 sm:py-6 shrink-0 flex justify-between items-center bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
               <h3 className="font-extrabold text-xl text-slate-900 flex items-center gap-3">
                 <div className="bg-blue-100 text-blue-600 p-2 rounded-xl"><Package size={20}/></div>
                 Create New Item
               </h3>
               <button onClick={() => setIsAddItemModalOpen(false)} className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors"><X size={20} strokeWidth={3}/></button>
             </div>
-            <form onSubmit={handleAddItem} className="p-8 space-y-6">
+            <form onSubmit={handleAddItem} className="p-6 sm:p-8 space-y-6 overflow-y-auto">
               <div className="flex gap-5">
                 <div className="flex-1">
                   <label className="block text-sm font-bold text-slate-700 mb-2">Item Code</label>
@@ -778,9 +932,9 @@ export default function InventoryLedger() {
 
       {/* Add Transaction Modal */}
       {isAddTxModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-300 border border-white/20">
-            <div className={`px-8 py-6 flex justify-between items-center border-b border-slate-100 bg-gradient-to-r ${newTx.type === "IN" ? "from-emerald-50 to-white" : "from-rose-50 to-white"}`}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-md">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-300 border border-white/20">
+            <div className={`px-6 sm:px-8 py-5 sm:py-6 shrink-0 flex justify-between items-center border-b border-slate-100 bg-gradient-to-r ${newTx.type === "IN" ? "from-emerald-50 to-white" : "from-rose-50 to-white"}`}>
               <h3 className={`font-extrabold text-xl flex items-center gap-3 ${newTx.type === "IN" ? "text-emerald-900" : "text-rose-900"}`}>
                 <div className={`p-2 rounded-xl text-white ${newTx.type === "IN" ? "bg-emerald-500" : "bg-rose-500"}`}>
                    {newTx.type === "IN" ? <FileDown size={20}/> : <FileUp size={20}/>} 
@@ -790,7 +944,7 @@ export default function InventoryLedger() {
               <button onClick={() => setIsAddTxModalOpen(false)} className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors"><X size={20} strokeWidth={3}/></button>
             </div>
             
-            <form onSubmit={handleAddTx} className="p-8 space-y-6">
+            <form onSubmit={handleAddTx} className="p-6 sm:p-8 space-y-5 sm:space-y-6 overflow-y-auto">
               <div className="flex gap-5">
                 <div className="flex-1">
                   <label className="block text-sm font-bold text-slate-700 mb-2">Item</label>
@@ -822,14 +976,37 @@ export default function InventoryLedger() {
                   <label className="block text-sm font-bold text-slate-700 mb-2">Quantity</label>
                   <input required type="number" min="1" value={newTx.quantity} onChange={e => setNewTx({...newTx, quantity: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-bold text-lg" />
                 </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Unit Price</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rs.</span>
-                    <input required type="number" step="0.01" min="0" value={newTx.unitPrice} onChange={e => setNewTx({...newTx, unitPrice: Number(e.target.value)})} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-bold text-lg font-mono" />
+                {newTx.type === "IN" && (
+                  <div className="flex-1">
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Unit Price</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rs.</span>
+                      <input required type="number" step="0.01" min="0" value={newTx.unitPrice} onChange={e => setNewTx({...newTx, unitPrice: Number(e.target.value)})} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-bold text-lg font-mono" />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
+              
+              {newTx.type === "OUT" && previewOutBatches && previewOutBatches.consumed.length > 0 && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">FIFO Cost Breakdown</div>
+                  <div className="space-y-1.5 border-b border-slate-200 pb-2 mb-2">
+                    {previewOutBatches.consumed.map((b, i) => (
+                      <div key={i} className="flex justify-between text-sm">
+                        <span className="text-slate-600 font-semibold">{b.qty} × {formatCurrency(b.price)}</span>
+                        <span className="font-bold text-slate-800">{formatCurrency(b.qty * b.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between font-black text-slate-900 text-lg">
+                    <span>Total Deducted Value</span>
+                    <span>{formatCurrency(previewOutBatches.totalOutValue)}</span>
+                  </div>
+                  {previewOutBatches.missingQty > 0 && (
+                     <div className="mt-2 text-sm text-rose-500 font-bold bg-rose-50 p-2 rounded-lg flex items-center gap-2"><AlertTriangle size={16}/> Warning: Missing stock for {previewOutBatches.missingQty} units!</div>
+                  )}
+                </div>
+              )}
               
               {/* Live Preview Card */}
               <div className={`p-5 rounded-2xl border-2 flex items-center justify-between transition-colors ${previewStock < 0 ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-slate-50 border-slate-200 text-slate-800'}`}>
@@ -867,22 +1044,38 @@ export default function InventoryLedger() {
 
     {/* --- Print-Only Comprehensive Report --- */}
     <div className="hidden print:block w-full bg-white text-black p-2 font-sans">
-      <div className="text-center mb-4 border-b border-black pb-2">
-        <h1 className="text-xl font-black uppercase tracking-widest text-black">Ledger</h1>
-        <p className="text-sm mt-1 font-bold text-gray-700">Double-Entry Stock Register Report</p>
-        <p className="text-xs mt-1 text-gray-600">Generated on: {new Date().toLocaleString()} | Filter Applied: {filterType.replace(/_/g, " ")} {filterType === "AS_OF_DATE" ? `(${asOfDate})` : ""}</p>
+      <div className="text-center mb-6 border-b-2 border-black pb-4">
+        <h1 className="text-2xl font-black text-black">සමෘද්ධි ප්‍රජාමූල බැංකු සමිතිය</h1>
+        <p className="text-lg font-bold text-gray-800">ප්‍රාදේශීය ලේකම් කාර්යාලය - නියාගම</p>
+        <h2 className="text-xl font-black uppercase tracking-widest text-black mt-3">Inventory Ledger & Valuation Report</h2>
+        <div className="flex justify-between items-end mt-4">
+          <div className="text-left">
+            <p className="text-xs mt-1 text-gray-600">Generated on: {new Date().toLocaleString()}</p>
+            <p className="text-xs text-gray-600">Filter Applied: {filterType.replace(/_/g, " ")} {filterType === "AS_OF_DATE" ? `(${asOfDate})` : ""}</p>
+          </div>
+          <div className="text-right bg-gray-100 p-2 rounded border border-gray-300">
+             <p className="text-xs font-bold text-gray-600 uppercase">Total Inventory Value</p>
+             <p className="text-lg font-black text-black">{formatCurrency(totalInventoryValue)}</p>
+          </div>
+        </div>
       </div>
 
       {allLedgers.map(({ item, rows }) => (
-        <div key={item.id} className="mb-6 break-inside-avoid">
-          <div className="flex justify-between items-end mb-2 border-b border-gray-400 pb-1">
+        <div key={item.id} className="mb-8 break-inside-avoid">
+          <div className="flex justify-between items-end mb-2 border-b border-gray-400 pb-2">
             <div>
-              <h2 className="text-sm font-bold text-black">{item.code} - {item.name}</h2>
+              <h2 className="text-base font-bold text-black">{item.code} - {item.name}</h2>
               <p className="text-xs text-gray-700">Reorder Level: {item.reorderLevel} | Default Price: {formatCurrency(item.defaultUnitPrice)}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold text-gray-600 uppercase">Final Balance</p>
-              <p className="text-sm font-black text-black">{rows.length > 0 ? rows[rows.length-1].balance : 0} Units</p>
+            <div className="text-right flex gap-6">
+              <div>
+                <p className="text-[10px] font-bold text-gray-600 uppercase">Final Balance</p>
+                <p className="text-sm font-black text-black">{rows.length > 0 ? rows[rows.length-1].balance : 0} Units</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-600 uppercase">Valuation</p>
+                <p className="text-sm font-black text-black">{rows.length > 0 ? formatCurrency(rows[rows.length-1].valuation) : formatCurrency(0)}</p>
+              </div>
             </div>
           </div>
 
