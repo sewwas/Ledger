@@ -490,44 +490,6 @@ export default function InventoryLedger() {
               <p className="text-slate-500 font-medium text-sm mt-0.5">ප්‍රාදේශීය ලේකම් කාර්යාලය - නියාගම</p>
             </div>
           </div>
-          
-          <div className="flex flex-wrap gap-4">
-            <div className="bg-white px-5 py-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-center min-w-[240px] hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4">
-                <div className="bg-emerald-100 p-2.5 rounded-full">
-                  <TrendingUp className="text-emerald-600" size={20}/>
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Value</div>
-                  <div className="text-2xl font-black text-slate-800 mt-0.5">{formatCurrency(totalInventoryValue)}</div>
-                </div>
-              </div>
-              
-              {/* Inline Breakdown for Global Total */}
-              {totalValueBreakdown.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Item Breakdown</div>
-                  <div className="space-y-1.5 max-h-32 overflow-y-auto pr-2">
-                    {totalValueBreakdown.map((b, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs gap-4">
-                        <span className="font-semibold text-slate-600 truncate" title={b.name}>{b.name}</span>
-                        <span className="font-bold text-slate-800 shrink-0">{formatCurrency(b.value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="bg-white px-5 py-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 min-w-[180px] hover:shadow-md transition-shadow">
-              <div className="bg-blue-100 p-2.5 rounded-full">
-                <Package className="text-blue-600" size={20}/>
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Items</div>
-                <div className="text-2xl font-black text-slate-800 mt-0.5">{activeItemsCount}</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -549,6 +511,62 @@ export default function InventoryLedger() {
       )}
 
       <main className="px-6 mt-8 space-y-8">
+        
+        {/* Dashboard Summary Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {/* Total Value */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col justify-center relative overflow-hidden group hover:shadow-md transition-shadow">
+              <div className="absolute -top-4 -right-4 p-6 opacity-[0.03] group-hover:scale-110 group-hover:opacity-[0.05] transition-all duration-500 pointer-events-none">
+                 <TrendingUp size={140} />
+              </div>
+              <div className="flex items-center gap-4 mb-4 relative z-10">
+                <div className="bg-emerald-100 p-3 rounded-xl shadow-inner">
+                  <TrendingUp className="text-emerald-600" size={24}/>
+                </div>
+                <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Value</div>
+              </div>
+              <div className="text-4xl font-black text-slate-800 relative z-10 tracking-tight">{formatCurrency(totalInventoryValue)}</div>
+            </div>
+            
+            {/* Active Items */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col justify-center relative overflow-hidden group hover:shadow-md transition-shadow">
+              <div className="absolute -top-4 -right-4 p-6 opacity-[0.03] group-hover:scale-110 group-hover:opacity-[0.05] transition-all duration-500 pointer-events-none">
+                 <Package size={140} />
+              </div>
+              <div className="flex items-center gap-4 mb-4 relative z-10">
+                <div className="bg-blue-100 p-3 rounded-xl shadow-inner">
+                  <Package className="text-blue-600" size={24}/>
+                </div>
+                <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active Items</div>
+              </div>
+              <div className="text-4xl font-black text-slate-800 relative z-10 tracking-tight">{activeItemsCount}</div>
+            </div>
+          </div>
+
+          {/* Item Breakdown */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-md transition-shadow flex flex-col">
+             <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2 pb-3 border-b border-slate-100">
+               <BarChart3 size={18} className="text-indigo-500"/>
+               Item Breakdown
+             </div>
+             {totalValueBreakdown.length > 0 ? (
+                <div className="space-y-1 overflow-y-auto pr-2 custom-scrollbar flex-1 -mx-2 px-2 max-h-32">
+                  {totalValueBreakdown.map((b, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-sm gap-4 p-2 hover:bg-slate-50 rounded-xl transition-colors">
+                      <span className="font-semibold text-slate-700 truncate" title={b.name}>{b.name}</span>
+                      <span className="font-bold text-slate-900 shrink-0">{formatCurrency(b.value)}</span>
+                    </div>
+                  ))}
+                </div>
+             ) : (
+                <div className="text-sm text-slate-400 font-medium italic flex flex-col items-center justify-center h-full min-h-[100px] opacity-70">
+                   <Package size={24} className="mb-2" />
+                   No items available
+                </div>
+             )}
+          </div>
+        </div>
         
         {/* Advanced Action Bar */}
         <div className="flex flex-col lg:flex-row gap-6 items-center justify-between bg-white p-3 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
